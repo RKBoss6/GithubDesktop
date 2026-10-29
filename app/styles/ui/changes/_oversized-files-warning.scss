@@ -8,6 +8,16 @@
       font-family: var(--font-family-monospace);
       margin-bottom: var(--spacing);
 
+      .path-text-component {
+        display: inline;
+      }
+
+      .file-size {
+        margin-left: var(--spacing-half);
+        color: var(--text-color-secondary);
+        white-space: nowrap;
+      }
+
       ul {
         list-style: none;
         margin: 0;

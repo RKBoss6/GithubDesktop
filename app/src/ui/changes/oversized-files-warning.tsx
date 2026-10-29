@@ -7,6 +7,9 @@ import { Repository } from '../../models/repository'
 import { ICommitContext } from '../../models/commit'
 import { DefaultCommitMessage } from '../../models/commit-message'
 import { OkCancelButtonGroup } from '../dialog/ok-cancel-button-group'
+import { stat } from 'fs/promises'
+import { join } from 'path'
+import { formatBytes } from '../lib/bytes'
 
 const GitLFSWebsiteURL =
   'https://help.github.com/articles/versioning-large-files/'
@@ -19,10 +22,34 @@ interface IOversizedFilesProps {
   readonly repository: Repository
 }
 
+interface IOversizedFilesState {
+  readonly fileSizes: ReadonlyMap<string, number>
+}
+
 /** A dialog to display a list of files that are too large to commit. */
-export class OversizedFiles extends React.Component<IOversizedFilesProps> {
+export class OversizedFiles extends React.Component<
+  IOversizedFilesProps,
+  IOversizedFilesState
+> {
+  private fileSizeRequest = 0
+
   public constructor(props: IOversizedFilesProps) {
     super(props)
+
+    this.state = { fileSizes: new Map() }
+  }
+
+  public componentDidMount() {
+    void this.loadFileSizes()
+  }
+
+  public componentDidUpdate(prevProps: IOversizedFilesProps) {
+    if (
+      prevProps.repository.path !== this.props.repository.path ||
+      prevProps.oversizedFiles !== this.props.oversizedFiles
+    ) {
+      void this.loadFileSizes()
+    }
   }
 
   public render() {
@@ -67,11 +94,46 @@ export class OversizedFiles extends React.Component<IOversizedFilesProps> {
           {this.props.oversizedFiles.map(fileName => (
             <li key={fileName}>
               <PathText path={fileName} />
+              {this.renderFileSize(fileName)}
             </li>
           ))}
         </ul>
       </div>
     )
+  }
+
+  private renderFileSize(fileName: string) {
+    const fileSize = this.state.fileSizes.get(fileName)
+    return fileSize === undefined ? null : (
+      <span className="file-size"> ({formatBytes(fileSize, 2)})</span>
+    )
+  }
+
+  private async loadFileSizes() {
+    const request = ++this.fileSizeRequest
+    const entries = await Promise.all(
+      this.props.oversizedFiles.map(async fileName => {
+        try {
+          const fileStats = await stat(
+            join(this.props.repository.path, fileName)
+          )
+          return [fileName, fileStats.size] as const
+        } catch (error) {
+          log.debug(`Unable to get the file size for ${fileName}`, error)
+          return null
+        }
+      })
+    )
+
+    if (request === this.fileSizeRequest) {
+      this.setState({
+        fileSizes: new Map(
+          entries.filter(
+            (entry): entry is readonly [string, number] => entry !== null
+          )
+        ),
+      })
+    }
   }
 
   private onSubmit = async () => {
